@@ -16,6 +16,7 @@ interface MutableMatrix<T>: Matrix<T> {
     operator fun set(x: Int, y: Int, value: T)
 }
 
+@Suppress("DEPRECATED_IDENTITY_EQUALS")
 abstract class AbstractMatrix<out T>: Matrix<T> {
     override fun toString(): String {
         val sb = StringBuilder()
@@ -108,10 +109,10 @@ fun <T> mutableMatrixOf(cols: Int, rows: Int, vararg elements: T): MutableMatrix
     return MutableListMatrix(cols, rows, elements.toMutableList())
 }
 
-inline private fun <T> prepareListForMatrix(cols: Int, rows: Int, init: (Int, Int) -> T): ArrayList<T> {
+private inline fun <T> prepareListForMatrix(cols: Int, rows: Int, init: (Int, Int) -> T): ArrayList<T> {
     val list = ArrayList<T>(cols * rows)
-    for (y in 0..rows - 1) {
-        for (x in 0..cols - 1) {
+    for (y in 0 until rows) {
+        for (x in 0 until cols) {
             list.add(init(x, y))
         }
     }
@@ -133,34 +134,34 @@ inline fun <T, U> Matrix<T>.mapIndexed(transform: (Int, Int, T) -> U): Matrix<U>
 }
 
 inline fun <T, U> Matrix<T>.map(transform: (T) -> U): Matrix<U> {
-    return mapIndexed { x, y, value -> transform(value) }
+    return mapIndexed { _, _, value -> transform(value) }
 }
 
-inline fun <T> Matrix<T>.forEachIndexed(action: (Int, Int, T) -> Unit): Unit {
-    for (y in 0..rows-1) {
-        for (x in 0..cols-1) {
+inline fun <T> Matrix<T>.forEachIndexed(action: (Int, Int, T) -> Unit) {
+    for (y in 0 until rows) {
+        for (x in 0 until cols) {
             action(x, y, this[x, y])
         }
     }
 }
 
 inline fun <T> Matrix<T>.forEach(action: (T) -> Unit): Unit {
-    forEachIndexed { x, y, value -> action(value) }
+    forEachIndexed { _, _, value -> action(value) }
 }
 
 fun <T> Matrix<T>.toList(): List<T> {
-    return prepareListForMatrix(cols, rows, { x, y -> this[x, y] })
+    return prepareListForMatrix(cols, rows) { x, y -> this[x, y] }
 }
 
 fun <T> Matrix<T>.toMutableList(): MutableList<T> {
-    return prepareListForMatrix(cols, rows, { x, y -> this[x, y] })
+    return prepareListForMatrix(cols, rows) { x, y -> this[x, y] }
 }
 
 private fun <T> Iterable<T>.toArrayList(size: Int): ArrayList<T> {
     val list = ArrayList<T>(size)
     val itr = iterator()
 
-    for (i in 0..size - 1) {
+    for (i in 0 until size) {
         if (itr.hasNext()) {
             list.add(itr.next())
         } else {

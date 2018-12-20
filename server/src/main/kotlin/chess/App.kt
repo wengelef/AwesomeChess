@@ -8,8 +8,8 @@ import org.kodein.di.generic.bind
 import org.kodein.di.generic.instance
 import org.kodein.di.generic.provider
 import org.kodein.di.generic.singleton
-import java.lang.IllegalArgumentException
 import java.util.*
+import kotlin.random.Random
 
 object GameModule {
     fun get() = Kodein.Module("GameModule") {
@@ -28,20 +28,94 @@ val game: Game by kodein.instance()
 fun main(args: Array<String>) {
 
     println(game.state())
+
+    game.start()
 }
 
 class Game(
-        val players: ArrayList<Player>,
-        val board: Board) {
+        private val players: ArrayList<Player>,
+        private val board: Board) {
+
+    fun start() {
+        println("Starting Game of Chess")
+
+        val player = players[0]
+
+        println("Current Player : ${player.team}")
+
+        board.fields.mapIndexed { x, y, field ->
+            if (field.owner.isPresent && field.owner.get() == player.team) {
+                if (field.piece.isPresent) {
+                    val piece = field.piece.get()
+
+                    val validMoves = piece.moves.map { move ->
+                        var newX = x
+                        var newY = y
+
+                        move.directions.forEach { (direction, number) ->
+                            when (direction) {
+                                Direction.Forward -> {
+                                    when (player.team) {
+                                        is White -> newY += number
+                                        is Black -> newY -= number
+                                    }
+                                }
+                                Direction.Backward -> {
+                                    when (player.team) {
+                                        is White -> newY -= number
+                                        is Black -> newY += number
+                                    }
+                                }
+                                Direction.Left -> newX -= number
+                                Direction.Right -> newX += number
+                                //Direction.Diagonally -> TODO()
+                            }
+                        }
+
+                        var result = Optional.empty<Pair<Int, Int>>()
+                        if (newX in 0..7 && newY in 0..7) {
+                            if (!board.fields[newX, newY].owner.isPresent) {
+                                result = Optional.of(newX to newY)
+                            }
+                        }
+                        result
+                    }
+
+                    validMoves.filter { optional -> optional.isPresent }
+                            .map { optional -> optional.get() }
+                            .forEach { (newX, newY) ->
+                                println("$piece can move to [$newX, $newY]")
+                            }
+
+                    // pick random move and go
+                    val list = validMoves.filter { optional -> optional.isPresent }
+                            .map { optional -> optional.get() }
+                            .toList()
+
+                    println(list)
+
+                    //[Random.nextInt(validMoves.size)]
+
+                    //board.fields[x, y] = Field(Optional.empty(), Optional.empty())
+                    //board.fields[newX, newY] = Field(Optional.of(player.team), Optional.of(piece))
+                }
+            }
+        }
+
+        board.fields.forEachIndexed { x, y, field ->
+
+        }
+    }
 
     fun state(): String {
-        /*return """
-            Players :
-            ${players.map { """
-                | Team [${it.team}]
-                | Pieces [${board.fields[it.team]}""".trimMargin() }}
-        """.trimIndent()*/
-        return board.fields.toString()
+        val fields = board.fields
+
+        return fields.mapIndexed { x, y, field ->
+            val owner: String = if (field.owner.isPresent) field.owner.get().toString() else "empty"
+            val piece: String = if (field.piece.isPresent) field.piece.get().toString() else "none"
+
+            if (x > 0 && x.rem(7) == 0) "[$x, $y] $owner $piece \n" else "[$x, $y] $owner $piece"
+        }.toString()
     }
 }
 
@@ -49,37 +123,27 @@ class Game(
 data class Player(val team: Team)
 
 class Board(
-        /*val pieces: Map<Team, List<Piece>> = mapOf(
-                Black to mutableListOf(
-                        King,
-                        Queen,
-                        Rook, Rook,
-                        Bishop, Bishop,
-                        Knight, Knight,
-                        Pawn, Pawn, Pawn, Pawn, Pawn, Pawn, Pawn, Pawn),
-                White to mutableListOf(
-                        King,
-                        Queen,
-                        Rook, Rook,
-                        Bishop, Bishop,
-                        Knight, Knight,
-                        Pawn, Pawn, Pawn, Pawn, Pawn, Pawn, Pawn, Pawn)
-        ),*/
-        val fields: Matrix<Field> = createMutableMatrix(8, 8) { x, y ->
-            val team = if (y == 0 || y == 1) White else Black
-
+        val fields: MutableMatrix<Field> = createMutableMatrix(8, 8) { x, y ->
+            val team = when (y) {
+                0, 1 -> Optional.of(White)
+                6, 7 -> Optional.of(Black)
+                else -> Optional.empty()
+            }
 
             val piece = if (y == 0 || y == 7) {
                 when (x) {
                     0, 7 -> Optional.of(Rook)
                     1, 6 -> Optional.of(Knight)
                     2, 5 -> Optional.of(Bishop)
-                    3, 4 -> {
-                        if (y == 0) {
-                            Optional.of(King)
-                        } else {
-                            Optional.of(Queen)
-                        }
+                    3 -> if (team == Optional.of(White)) {
+                        Optional.of(King)
+                    } else {
+                        Optional.of(Queen)
+                    }
+                    4 -> if (team == Optional.of(White)) {
+                        Optional.of(Queen)
+                    } else {
+                        Optional.of(King)
                     }
                     else -> throw IllegalArgumentException("Field out of Bounds at $x, $y")
                 }
@@ -93,4 +157,4 @@ class Board(
         }
 )
 
-data class Field(val owner: Team, val piece: Optional<out Piece>)
+data class Field(val owner: Optional<out Team>, val piece: Optional<out Piece>)
