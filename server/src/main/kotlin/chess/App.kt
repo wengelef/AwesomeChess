@@ -26,10 +26,16 @@ val kodein = Kodein {
 val game: Game by kodein.instance()
 
 fun main(args: Array<String>) {
-
-    println(game.state())
-
     game.start()
+}
+
+
+data class Point(val x: Int, val y: Int) {
+    override fun toString(): String = "[$x, $y]"
+}
+
+class Turn(val from: Point, val to: Point) {
+    override fun toString(): String = "Turn ($from to $to)"
 }
 
 class Game(
@@ -39,73 +45,78 @@ class Game(
     fun start() {
         println("Starting Game of Chess")
 
-        val player = players[0]
 
-        println("Current Player : ${player.team}")
+        var turnIndex = -1
 
-        board.fields.mapIndexed { x, y, field ->
-            if (field.owner.isPresent && field.owner.get() == player.team) {
-                if (field.piece.isPresent) {
-                    val piece = field.piece.get()
+        while (board.fields.toList().count { it.piece.isPresent && it.piece.get() == King } > 1) {
 
-                    val validMoves = piece.moves.map { move ->
-                        var newX = x
-                        var newY = y
 
-                        move.directions.forEach { (direction, number) ->
-                            when (direction) {
-                                Direction.Forward -> {
-                                    when (player.team) {
-                                        is White -> newY += number
-                                        is Black -> newY -= number
+            ++turnIndex
+            print("Turn $turnIndex ${state()}")
+
+            val numberOfKings = board.fields.toList().count { it.piece.isPresent && it.piece.get() == King }
+
+            println("Number of Kings on the Field $numberOfKings")
+
+            val player = players[turnIndex.rem(2)]
+
+            println("Current Player : ${player.team} has ${board.fields.toList().count { it.owner.isPresent && it.owner.get() == player.team }} Pieces")
+
+            val turns = mutableListOf<Turn>()
+
+            board.fields.forEachIndexed { x, y, field ->
+                if (field.owner.isPresent && field.owner.get() == player.team) {
+                    if (field.piece.isPresent) {
+                        val piece = field.piece.get()
+
+                        piece.moves.forEach { move ->
+                            var newX = x
+                            var newY = y
+
+                            move.directions.forEach { (direction, number) ->
+                                when (direction) {
+                                    Direction.Forward -> {
+                                        when (player.team) {
+                                            is White -> newY += number
+                                            is Black -> newY -= number
+                                        }
                                     }
-                                }
-                                Direction.Backward -> {
-                                    when (player.team) {
-                                        is White -> newY -= number
-                                        is Black -> newY += number
+                                    Direction.Backward -> {
+                                        when (player.team) {
+                                            is White -> newY -= number
+                                            is Black -> newY += number
+                                        }
                                     }
+                                    Direction.Left -> newX -= number
+                                    Direction.Right -> newX += number
+                                    //Direction.Diagonally -> TODO()
                                 }
-                                Direction.Left -> newX -= number
-                                Direction.Right -> newX += number
-                                //Direction.Diagonally -> TODO()
+                            }
+
+                            if (newX in 0..7 && newY in 0..7) {
+                                val field = board.fields[newX, newY]
+                                val owner = field.owner
+                                if (!owner.isPresent ||
+                                        owner.isPresent && owner.get() != player.team) {
+                                    turns.add(Turn(Point(x, y), Point(newX, newY)))
+                                }
                             }
                         }
-
-                        var result = Optional.empty<Pair<Int, Int>>()
-                        if (newX in 0..7 && newY in 0..7) {
-                            if (!board.fields[newX, newY].owner.isPresent) {
-                                result = Optional.of(newX to newY)
-                            }
-                        }
-                        result
                     }
-
-                    validMoves.filter { optional -> optional.isPresent }
-                            .map { optional -> optional.get() }
-                            .forEach { (newX, newY) ->
-                                println("$piece can move to [$newX, $newY]")
-                            }
-
-                    // pick random move and go
-                    val list = validMoves.filter { optional -> optional.isPresent }
-                            .map { optional -> optional.get() }
-                            .toList()
-
-                    println(list)
-
-                    //[Random.nextInt(validMoves.size)]
-
-                    //board.fields[x, y] = Field(Optional.empty(), Optional.empty())
-                    //board.fields[newX, newY] = Field(Optional.of(player.team), Optional.of(piece))
                 }
             }
-        }
 
-        board.fields.forEachIndexed { x, y, field ->
+            val turn = turns[Random.nextInt(turns.size)]
 
+            turn.apply {
+                board.fields[to.x, to.y] = board.fields[from.x, from.y]
+                board.fields[from.x, from.y] = Field(Optional.empty(), Optional.empty())
+
+                println("moved ${player.team} ${board.fields[to.x, to.y].piece.get()} from $from to $to")
+            }
         }
     }
+
 
     fun state(): String {
         val fields = board.fields
