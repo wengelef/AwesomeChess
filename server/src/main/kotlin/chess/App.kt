@@ -3,11 +3,28 @@
  */
 package chess
 
+import io.ktor.application.ApplicationCallPipeline
+import io.ktor.application.call
+import io.ktor.application.install
+import io.ktor.features.CallLogging
+import io.ktor.features.DefaultHeaders
+import io.ktor.http.cio.websocket.CloseReason
+import io.ktor.http.cio.websocket.Frame
+import io.ktor.http.cio.websocket.close
+import io.ktor.routing.routing
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.netty.Netty
+import io.ktor.sessions.*
+import io.ktor.util.generateNonce
+import io.ktor.websocket.WebSockets
+import io.ktor.websocket.webSocket
+import kotlinx.coroutines.channels.consumeEach
 import org.kodein.di.Kodein
 import org.kodein.di.generic.bind
 import org.kodein.di.generic.instance
 import org.kodein.di.generic.provider
 import org.kodein.di.generic.singleton
+import java.time.Duration
 import java.util.*
 import kotlin.random.Random
 
@@ -26,9 +43,58 @@ val kodein = Kodein {
 val game: Game by kodein.instance()
 
 fun main(args: Array<String>) {
-    game.start()
+
+    embeddedServer(Netty, 8080) {
+        install(DefaultHeaders)
+        install(CallLogging)
+
+        install(WebSockets) {
+            pingPeriod = Duration.ofMinutes(1)
+        }
+
+        install(Sessions) {
+            cookie<GameSession>("Session")
+        }
+
+        intercept(ApplicationCallPipeline.Features) {
+            if (call.sessions.get<GameSession>() == null) {
+                call.sessions.set(GameSession(generateNonce()))
+            }
+        }
+
+        routing {
+            webSocket("/start") {
+                val session = call.sessions.get<GameSession>()
+
+                if (session == null) {
+                    close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "No Session"))
+                    return@webSocket
+                }
+
+                game.start()
+
+                try {
+                    incoming.consumeEach { frame ->
+                        while (!game.isOver) {
+                            val turn = game.nextTurn()
+                            outgoing.offer(Frame.Text(turn.toString()))
+                        }
+                    }
+                } finally {
+                    close(CloseReason(CloseReason.Codes.NORMAL, "Good Bye."))
+                }
+            }
+
+            webSocket("/board") {
+                outgoing.send(Frame.Text("I see you"))
+            }
+        }
+    }.start(true)
+
+    //game.start()
 }
 
+data class GameSession(val id: String)
 
 data class Point(val x: Int, val y: Int) {
     override fun toString(): String = "[$x, $y]"
@@ -42,78 +108,82 @@ class Game(
         private val players: ArrayList<Player>,
         private val board: Board) {
 
+    var isOver: Boolean = false
+
+
+    private var turnIndex = -1
+
     fun start() {
         println("Starting Game of Chess")
 
+        isOver = false
+        turnIndex = -1
+    }
 
-        var turnIndex = -1
+    fun nextTurn(): Turn {
+        print("Turn $turnIndex ${state()}")
 
-        while (board.fields.toList().count { it.piece.isPresent && it.piece.get() == King } > 1) {
+        val player = players[turnIndex.rem(2)]
 
+        println("Current Player : ${player.team} has ${board.fields.toList().count { it.owner.isPresent && it.owner.get() == player.team }} Pieces")
 
-            ++turnIndex
-            print("Turn $turnIndex ${state()}")
+        val turns = mutableListOf<Turn>()
 
-            val numberOfKings = board.fields.toList().count { it.piece.isPresent && it.piece.get() == King }
+        board.fields.forEachIndexed { x, y, field ->
+            if (field.owner.isPresent && field.owner.get() == player.team) {
+                if (field.piece.isPresent) {
+                    val piece = field.piece.get()
 
-            println("Number of Kings on the Field $numberOfKings")
+                    piece.moves.forEach { move ->
+                        var newX = x
+                        var newY = y
 
-            val player = players[turnIndex.rem(2)]
-
-            println("Current Player : ${player.team} has ${board.fields.toList().count { it.owner.isPresent && it.owner.get() == player.team }} Pieces")
-
-            val turns = mutableListOf<Turn>()
-
-            board.fields.forEachIndexed { x, y, field ->
-                if (field.owner.isPresent && field.owner.get() == player.team) {
-                    if (field.piece.isPresent) {
-                        val piece = field.piece.get()
-
-                        piece.moves.forEach { move ->
-                            var newX = x
-                            var newY = y
-
-                            move.directions.forEach { (direction, number) ->
-                                when (direction) {
-                                    Direction.Forward -> {
-                                        when (player.team) {
-                                            is White -> newY += number
-                                            is Black -> newY -= number
-                                        }
+                        move.directions.forEach { (direction, number) ->
+                            when (direction) {
+                                Direction.Forward -> {
+                                    when (player.team) {
+                                        is White -> newY += number
+                                        is Black -> newY -= number
                                     }
-                                    Direction.Backward -> {
-                                        when (player.team) {
-                                            is White -> newY -= number
-                                            is Black -> newY += number
-                                        }
-                                    }
-                                    Direction.Left -> newX -= number
-                                    Direction.Right -> newX += number
-                                    //Direction.Diagonally -> TODO()
                                 }
+                                Direction.Backward -> {
+                                    when (player.team) {
+                                        is White -> newY -= number
+                                        is Black -> newY += number
+                                    }
+                                }
+                                Direction.Left -> newX -= number
+                                Direction.Right -> newX += number
+                                //Direction.Diagonally -> TODO()
                             }
+                        }
 
-                            if (newX in 0..7 && newY in 0..7) {
-                                val field = board.fields[newX, newY]
-                                val owner = field.owner
-                                if (!owner.isPresent ||
-                                        owner.isPresent && owner.get() != player.team) {
-                                    turns.add(Turn(Point(x, y), Point(newX, newY)))
-                                }
+                        if (newX in 0..7 && newY in 0..7) {
+                            val field = board.fields[newX, newY]
+                            val owner = field.owner
+                            if (!owner.isPresent ||
+                                    owner.isPresent && owner.get() != player.team) {
+                                turns.add(Turn(Point(x, y), Point(newX, newY)))
                             }
                         }
                     }
                 }
             }
+        }
 
-            val turn = turns[Random.nextInt(turns.size)]
+        val turn = turns[Random.nextInt(turns.size)]
 
-            turn.apply {
-                board.fields[to.x, to.y] = board.fields[from.x, from.y]
-                board.fields[from.x, from.y] = Field(Optional.empty(), Optional.empty())
+        ++turnIndex
 
-                println("moved ${player.team} ${board.fields[to.x, to.y].piece.get()} from $from to $to")
-            }
+        return turn.apply {
+            board.fields[to.x, to.y] = board.fields[from.x, from.y]
+            board.fields[from.x, from.y] = Field(Optional.empty(), Optional.empty())
+
+            println("moved ${player.team} ${board.fields[to.x, to.y].piece.get()} from $from to $to")
+
+            val numberOfKings = board.fields.toList().count { it.piece.isPresent && it.piece.get() == King }
+            isOver = numberOfKings < 2
+            println("Number of Kings on the Field $numberOfKings")
         }
     }
 
