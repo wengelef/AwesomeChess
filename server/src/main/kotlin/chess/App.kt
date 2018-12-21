@@ -3,14 +3,15 @@
  */
 package chess
 
+import com.google.gson.Gson
 import io.ktor.application.ApplicationCallPipeline
 import io.ktor.application.call
 import io.ktor.application.install
 import io.ktor.features.CallLogging
+import io.ktor.features.ContentNegotiation
 import io.ktor.features.DefaultHeaders
-import io.ktor.http.cio.websocket.CloseReason
-import io.ktor.http.cio.websocket.Frame
-import io.ktor.http.cio.websocket.close
+import io.ktor.gson.gson
+import io.ktor.http.cio.websocket.*
 import io.ktor.routing.routing
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
@@ -19,37 +20,61 @@ import io.ktor.util.generateNonce
 import io.ktor.websocket.WebSockets
 import io.ktor.websocket.webSocket
 import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.channels.mapNotNull
 import org.kodein.di.Kodein
 import org.kodein.di.generic.bind
 import org.kodein.di.generic.instance
 import org.kodein.di.generic.provider
 import org.kodein.di.generic.singleton
+import org.slf4j.event.Level
 import java.time.Duration
 import java.util.*
-import kotlin.random.Random
 
 object GameModule {
     fun get() = Kodein.Module("GameModule") {
-        bind<ArrayList<Player>>() with provider { arrayListOf(Player(Black), Player(White)) }
+        bind<ArrayList<Player>>() with provider { arrayListOf(Player(Team.Black), Player(Team.White)) }
         bind<Board>() with provider { Board() }
         bind<Game>() with singleton { Game(instance(), instance()) }
+        bind<GameServer>() with singleton { GameServerImpl() }
+    }
+}
+
+object AppModule {
+    fun get() = Kodein.Module("AppModule") {
+        bind<Gson>() with singleton { Gson() }
     }
 }
 
 val kodein = Kodein {
     import(GameModule.get())
+    import(AppModule.get())
 }
 
 val game: Game by kodein.instance()
+val gson: Gson by kodein.instance()
+val server: GameServer by kodein.instance()
 
 fun main(args: Array<String>) {
 
     embeddedServer(Netty, 8080) {
         install(DefaultHeaders)
-        install(CallLogging)
+
+        install(CallLogging) {
+            level = Level.INFO
+        }
+
+        install(ContentNegotiation) {
+            gson {
+                setPrettyPrinting()
+            }
+        }
 
         install(WebSockets) {
             pingPeriod = Duration.ofMinutes(1)
+            timeout = Duration.ofSeconds(15)
+            maxFrameSize = Long.MAX_VALUE
+
+            masking = false
         }
 
         install(Sessions) {
@@ -63,7 +88,7 @@ fun main(args: Array<String>) {
         }
 
         routing {
-            webSocket("/start") {
+            webSocket("/") {
                 val session = call.sessions.get<GameSession>()
 
                 if (session == null) {
@@ -71,171 +96,48 @@ fun main(args: Array<String>) {
                     return@webSocket
                 }
 
-                game.start()
+                server.memberJoin(session.id, this)
 
                 try {
-                    incoming.consumeEach { frame ->
-                        while (!game.isOver) {
-                            val turn = game.nextTurn()
-                            outgoing.offer(Frame.Text(turn.toString()))
+                    server.sendTo(session.id, "server", "Commands : start, turn, board, test")
+
+                    incoming.mapNotNull { it as? Frame.Text }.consumeEach {
+                        when (it.readText()) {
+                            "start" -> {
+                                game.start()
+                                server.broadcast("Game started")
+                            }
+                            "turn" -> {
+                                if (game.isOver) {
+                                    server.broadcast("Game Over")
+                                    server.broadcast(gson.toJson(game.winner.get()))
+                                } else {
+                                    val turn = game.nextTurn()
+                                    server.broadcast(gson.toJson(turn))
+                                }
+                            }
+                            "board" -> server.broadcast(gson.toJson(game.board))
+                            "test" -> {
+                                while (!game.isOver) {
+                                    val turn = game.nextTurn()
+                                    server.broadcast(gson.toJson(turn))
+                                }
+                                server.broadcast(gson.toJson(game.winner.get()))
+                            }
+                            else -> server.sendTo(session.id, "server", "Huh?")
                         }
                     }
+                } catch (exception: Exception) {
+                    println("Caught Exception : ${exception.printStackTrace()}")
                 } finally {
+                    server.memberLeft(session.id, this)
                     close(CloseReason(CloseReason.Codes.NORMAL, "Good Bye."))
                 }
             }
 
             webSocket("/board") {
-                outgoing.send(Frame.Text("I see you"))
+                server.broadcast("I see you")
             }
         }
     }.start(true)
-
-    //game.start()
 }
-
-data class GameSession(val id: String)
-
-data class Point(val x: Int, val y: Int) {
-    override fun toString(): String = "[$x, $y]"
-}
-
-class Turn(val from: Point, val to: Point) {
-    override fun toString(): String = "Turn ($from to $to)"
-}
-
-class Game(
-        private val players: ArrayList<Player>,
-        private val board: Board) {
-
-    var isOver: Boolean = false
-
-
-    private var turnIndex = -1
-
-    fun start() {
-        println("Starting Game of Chess")
-
-        isOver = false
-        turnIndex = -1
-    }
-
-    fun nextTurn(): Turn {
-        print("Turn $turnIndex ${state()}")
-
-        val player = players[turnIndex.rem(2)]
-
-        println("Current Player : ${player.team} has ${board.fields.toList().count { it.owner.isPresent && it.owner.get() == player.team }} Pieces")
-
-        val turns = mutableListOf<Turn>()
-
-        board.fields.forEachIndexed { x, y, field ->
-            if (field.owner.isPresent && field.owner.get() == player.team) {
-                if (field.piece.isPresent) {
-                    val piece = field.piece.get()
-
-                    piece.moves.forEach { move ->
-                        var newX = x
-                        var newY = y
-
-                        move.directions.forEach { (direction, number) ->
-                            when (direction) {
-                                Direction.Forward -> {
-                                    when (player.team) {
-                                        is White -> newY += number
-                                        is Black -> newY -= number
-                                    }
-                                }
-                                Direction.Backward -> {
-                                    when (player.team) {
-                                        is White -> newY -= number
-                                        is Black -> newY += number
-                                    }
-                                }
-                                Direction.Left -> newX -= number
-                                Direction.Right -> newX += number
-                                //Direction.Diagonally -> TODO()
-                            }
-                        }
-
-                        if (newX in 0..7 && newY in 0..7) {
-                            val field = board.fields[newX, newY]
-                            val owner = field.owner
-                            if (!owner.isPresent ||
-                                    owner.isPresent && owner.get() != player.team) {
-                                turns.add(Turn(Point(x, y), Point(newX, newY)))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        val turn = turns[Random.nextInt(turns.size)]
-
-        ++turnIndex
-
-        return turn.apply {
-            board.fields[to.x, to.y] = board.fields[from.x, from.y]
-            board.fields[from.x, from.y] = Field(Optional.empty(), Optional.empty())
-
-            println("moved ${player.team} ${board.fields[to.x, to.y].piece.get()} from $from to $to")
-
-            val numberOfKings = board.fields.toList().count { it.piece.isPresent && it.piece.get() == King }
-            isOver = numberOfKings < 2
-            println("Number of Kings on the Field $numberOfKings")
-        }
-    }
-
-
-    fun state(): String {
-        val fields = board.fields
-
-        return fields.mapIndexed { x, y, field ->
-            val owner: String = if (field.owner.isPresent) field.owner.get().toString() else "empty"
-            val piece: String = if (field.piece.isPresent) field.piece.get().toString() else "none"
-
-            if (x > 0 && x.rem(7) == 0) "[$x, $y] $owner $piece \n" else "[$x, $y] $owner $piece"
-        }.toString()
-    }
-}
-
-
-data class Player(val team: Team)
-
-class Board(
-        val fields: MutableMatrix<Field> = createMutableMatrix(8, 8) { x, y ->
-            val team = when (y) {
-                0, 1 -> Optional.of(White)
-                6, 7 -> Optional.of(Black)
-                else -> Optional.empty()
-            }
-
-            val piece = if (y == 0 || y == 7) {
-                when (x) {
-                    0, 7 -> Optional.of(Rook)
-                    1, 6 -> Optional.of(Knight)
-                    2, 5 -> Optional.of(Bishop)
-                    3 -> if (team == Optional.of(White)) {
-                        Optional.of(King)
-                    } else {
-                        Optional.of(Queen)
-                    }
-                    4 -> if (team == Optional.of(White)) {
-                        Optional.of(Queen)
-                    } else {
-                        Optional.of(King)
-                    }
-                    else -> throw IllegalArgumentException("Field out of Bounds at $x, $y")
-                }
-            } else if (y == 1 || y == 6) {
-                Optional.of(Pawn)
-            } else {
-                Optional.empty()
-            }
-
-            Field(team, piece)
-        }
-)
-
-data class Field(val owner: Optional<out Team>, val piece: Optional<out Piece>)
