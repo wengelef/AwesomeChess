@@ -1,5 +1,7 @@
-package chess
+package chess.model
 
+import chess.util.MutableMatrix
+import chess.util.createMutableMatrix
 import java.util.*
 
 data class Board(var fields: MutableMatrix<Field> = getDefaultBoard()) {

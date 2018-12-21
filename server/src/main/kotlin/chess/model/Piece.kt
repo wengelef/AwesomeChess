@@ -1,4 +1,4 @@
-package chess
+package chess.model
 
 
 enum class Direction { Forward, Backward, Left, Right, Diagonally }

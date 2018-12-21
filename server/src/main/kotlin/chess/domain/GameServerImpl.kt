@@ -1,4 +1,4 @@
-package chess
+package chess.domain
 
 import io.ktor.http.cio.websocket.CloseReason
 import io.ktor.http.cio.websocket.Frame

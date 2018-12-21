@@ -3,6 +3,13 @@
  */
 package chess
 
+import chess.domain.Game
+import chess.domain.GameServer
+import chess.domain.GameServerImpl
+import chess.model.Board
+import chess.model.GameSession
+import chess.model.Player
+import chess.model.Team
 import com.google.gson.Gson
 import io.ktor.application.ApplicationCallPipeline
 import io.ktor.application.call

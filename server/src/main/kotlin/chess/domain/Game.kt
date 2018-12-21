@@ -1,5 +1,9 @@
-package chess
+package chess.domain
 
+import chess.util.Point
+import chess.util.forEachIndexed
+import chess.model.*
+import chess.util.toList
 import java.util.*
 import kotlin.random.Random
 
