@@ -13,7 +13,33 @@ data class Board(var fields: MutableMatrix<Field> = getDefaultBoard()) {
     fun reset() {
         fields = getDefaultBoard()
     }
+
+    fun asSerializable(): Array<Array<NetField>> {
+        val returnValue = arrayOfNulls<Array<NetField>>(8)
+        for (i in 0..7) {
+            val column = arrayOf(
+                    NetField(Team.None, PieceType.None),
+                    NetField(Team.None, PieceType.None),
+                    NetField(Team.None, PieceType.None),
+                    NetField(Team.None, PieceType.None),
+                    NetField(Team.None, PieceType.None),
+                    NetField(Team.None, PieceType.None),
+                    NetField(Team.None, PieceType.None),
+                    NetField(Team.None, PieceType.None))
+
+            for (j in 0..7) {
+                val field = fields[j, i]
+                if (field.owner.isPresent) {
+                    column[j] = NetField(field.owner.get(), field.piece.get().type)
+                }
+            }
+            returnValue[i] = column
+        }
+        return returnValue as Array<Array<NetField>>
+    }
 }
+
+data class NetField(val team: Team, val piece: PieceType)
 
 private fun getDefaultBoard(): MutableMatrix<Field> = createMutableMatrix(8, 8) { x, y ->
     val team = when (y) {

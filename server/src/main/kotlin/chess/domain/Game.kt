@@ -1,8 +1,8 @@
 package chess.domain
 
+import chess.model.*
 import chess.util.Point
 import chess.util.forEachIndexed
-import chess.model.*
 import chess.util.toList
 import java.util.*
 import kotlin.random.Random
@@ -18,8 +18,6 @@ class Game(
     private var turnIndex = -1
 
     fun start() {
-        println("Starting Game of Chess")
-
         isOver = false
         board.reset()
         turnIndex = -1
@@ -28,13 +26,9 @@ class Game(
     fun nextTurn(): Turn {
         ++turnIndex
 
-        print("Turn $turnIndex ${state()}")
-
         val playerIndex = turnIndex.rem(2)
 
         val player = players[playerIndex]
-
-        println("Current Player : ${player.team} has ${board.fields.toList().count { it.owner.isPresent && it.owner.get() == player.team }} Pieces")
 
         val turns = mutableListOf<Turn>()
 
@@ -86,8 +80,6 @@ class Game(
             board.fields[to.x, to.y] = board.fields[from.x, from.y]
             board.fields[from.x, from.y] = Field(Optional.empty(), Optional.empty())
 
-            println("moved ${player.team} ${board.fields[to.x, to.y].piece.get()} from $from to $to")
-
             val numberOfKings = board.fields.toList().count { it.piece.isPresent && it.piece.get() == King }
             isOver = numberOfKings < 2
 
@@ -95,18 +87,5 @@ class Game(
                 winner = Optional.of(player.team)
             }
         }
-    }
-
-
-    fun state(): String {
-        return ""
-        /*val fields = board.fields
-
-        return fields.mapIndexed { x, y, field ->
-            val owner: String = if (field.owner.isPresent) field.owner.get().toString() else "empty"
-            val piece: String = if (field.piece.isPresent) field.piece.get().toString() else "none"
-
-            if (x > 0 && x.rem(7) == 0) "[$x, $y] $owner $piece \n" else "[$x, $y] $owner $piece"
-        }.toString()*/
     }
 }

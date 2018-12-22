@@ -1,5 +1,5 @@
 package chess.model
 
 enum class Team {
-    Black, White
+    Black, White, None
 }

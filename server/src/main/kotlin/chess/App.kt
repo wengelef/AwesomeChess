@@ -11,6 +11,7 @@ import chess.model.GameSession
 import chess.model.Player
 import chess.model.Team
 import com.google.gson.Gson
+import com.google.gson.JsonSyntaxException
 import io.ktor.application.ApplicationCallPipeline
 import io.ktor.application.call
 import io.ktor.application.install
@@ -18,7 +19,10 @@ import io.ktor.features.CallLogging
 import io.ktor.features.ContentNegotiation
 import io.ktor.features.DefaultHeaders
 import io.ktor.gson.gson
-import io.ktor.http.cio.websocket.*
+import io.ktor.http.cio.websocket.CloseReason
+import io.ktor.http.cio.websocket.Frame
+import io.ktor.http.cio.websocket.close
+import io.ktor.http.cio.websocket.readText
 import io.ktor.routing.routing
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
@@ -42,13 +46,13 @@ object GameModule {
         bind<ArrayList<Player>>() with provider { arrayListOf(Player(Team.Black), Player(Team.White)) }
         bind<Board>() with provider { Board() }
         bind<Game>() with singleton { Game(instance(), instance()) }
-        bind<GameServer>() with singleton { GameServerImpl() }
     }
 }
 
 object AppModule {
     fun get() = Kodein.Module("AppModule") {
         bind<Gson>() with singleton { Gson() }
+        bind<GameServer>() with singleton { GameServerImpl(instance()) }
     }
 }
 
@@ -60,6 +64,8 @@ val kodein = Kodein {
 val game: Game by kodein.instance()
 val gson: Gson by kodein.instance()
 val server: GameServer by kodein.instance()
+
+data class Command(val command: String)
 
 fun main(args: Array<String>) {
 
@@ -108,42 +114,43 @@ fun main(args: Array<String>) {
                 try {
                     server.sendTo(session.id, "server", "Commands : start, turn, board, test")
 
-                    incoming.mapNotNull { it as? Frame.Text }.consumeEach {
-                        when (it.readText()) {
-                            "start" -> {
-                                game.start()
-                                server.broadcast("Game started")
-                            }
-                            "turn" -> {
-                                if (game.isOver) {
-                                    server.broadcast("Game Over")
-                                    server.broadcast(gson.toJson(game.winner.get()))
-                                } else {
-                                    val turn = game.nextTurn()
-                                    server.broadcast(gson.toJson(turn))
+                    incoming.mapNotNull { it as? Frame.Text }
+                            .consumeEach { frame ->
+                                val command = try {
+                                    gson.fromJson(frame.readText(), Command::class.java)
+                                } catch (exception: JsonSyntaxException) {
+                                    Command(frame.readText())
+                                }.command
+
+                                when (command) {
+                                    "start" -> {
+                                        game.start()
+                                        server.sendBoard(game.board)
+                                    }
+                                    "turn" -> {
+                                        game.nextTurn()
+                                        server.sendBoard(game.board)
+                                        if (game.isOver) {
+                                            server.broadcast("${game.winner.get()} won the Game")
+                                        }
+                                    }
+                                    "board" -> server.sendBoard(game.board)
+                                    "test" -> {
+                                        while (!game.isOver) {
+                                            game.nextTurn()
+                                            server.sendBoard(game.board)
+                                        }
+                                        server.broadcast("${game.winner.get()} won the Game")
+                                    }
+                                    else -> server.sendTo(session.id, "server", "Huh?")
                                 }
                             }
-                            "board" -> server.broadcast(gson.toJson(game.board))
-                            "test" -> {
-                                while (!game.isOver) {
-                                    val turn = game.nextTurn()
-                                    server.broadcast(gson.toJson(turn))
-                                }
-                                server.broadcast(gson.toJson(game.winner.get()))
-                            }
-                            else -> server.sendTo(session.id, "server", "Huh?")
-                        }
-                    }
                 } catch (exception: Exception) {
                     println("Caught Exception : ${exception.printStackTrace()}")
                 } finally {
                     server.memberLeft(session.id, this)
                     close(CloseReason(CloseReason.Codes.NORMAL, "Good Bye."))
                 }
-            }
-
-            webSocket("/board") {
-                server.broadcast("I see you")
             }
         }
     }.start(true)

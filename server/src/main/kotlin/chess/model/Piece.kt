@@ -3,16 +3,18 @@ package chess.model
 
 enum class Direction { Forward, Backward, Left, Right, Diagonally }
 
+enum class PieceType { King, Queen, Rook, Bishop, Knight, Pawn, None }
+
 data class Move(val directions: List<Pair<Direction, Int>>)
 
-sealed class Piece(val moves: List<Move>) {
+sealed class Piece(val type: PieceType, val moves: List<Move>) {
     override fun toString(): String {
         return javaClass.simpleName
     }
 }
 
 
-object King : Piece(listOf(
+object King : Piece(PieceType.King, listOf(
         Move(listOf(
                 Direction.Forward to 1
         )),
@@ -30,7 +32,7 @@ object King : Piece(listOf(
         ))
 ))
 
-object Queen : Piece(listOf(
+object Queen : Piece(PieceType.Queen, listOf(
         Move(listOf(
                 Direction.Forward to 0
         )),
@@ -48,7 +50,7 @@ object Queen : Piece(listOf(
         ))
 ))
 
-object Rook : Piece(listOf(
+object Rook : Piece(PieceType.Rook, listOf(
         Move(listOf(
                 Direction.Forward to 0
         )),
@@ -63,13 +65,13 @@ object Rook : Piece(listOf(
         ))
 ))
 
-object Bishop : Piece(listOf(
+object Bishop : Piece(PieceType.Bishop, listOf(
         Move(listOf(
                 Direction.Diagonally to 0
         ))
 ))
 
-object Knight : Piece(listOf(
+object Knight : Piece(PieceType.Knight, listOf(
         Move(listOf(
                 Direction.Forward to 2,
                 Direction.Left to 1
@@ -104,4 +106,6 @@ object Knight : Piece(listOf(
         ))
 ))
 
-object Pawn : Piece(listOf(Move(listOf(Direction.Forward to 1))))
+object Pawn : Piece(PieceType.Pawn, listOf(Move(listOf(Direction.Forward to 1))))
+
+object None : Piece(PieceType.None, emptyList())
