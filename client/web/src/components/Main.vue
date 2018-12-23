@@ -1,11 +1,20 @@
 <template>
   <div class="chessboard">
     <h1>{{ $store.state.value }}</h1>
-    <textarea
-        v-model="command"
-        placeholder="input command"
-        rows="1"></textarea>
-    <button v-on:click="send">Send</button>
+
+    <md-card md-with-hover>
+      <!--<md-field>
+        <label>Send commands</label>
+        <md-input v-model="command"></md-input>
+      </md-field>-->
+      <md-card-actions>
+        <md-button @click="start">Start</md-button>
+        <md-button @click="turn">Turn</md-button>
+        <md-button @click="board">Board</md-button>
+        <md-button @click="test">Test</md-button>
+      </md-card-actions>
+
+    </md-card>
 
     <table class="board">
         <tr v-for="(row, rowIndex) in $store.state.board" :key="rowIndex">
@@ -23,6 +32,8 @@
 import store from '../socketStore'
 import { mapActions } from 'vuex'
 
+import 'vue-material/dist/vue-material.min.css'
+
 export default {
   name: 'Main',
   store,
@@ -36,6 +47,19 @@ export default {
       send (context) {
         const text = this.command
         context('send', { text })
+        this.command = ''
+      },
+      start (context) {
+        context('sendStart')
+      },
+      turn (context) {
+        context('sendTurn')
+      },
+      board (context) {
+        context('sendBoard')
+      },
+      test (context) {
+        context('sendTest')
       }
     }),
     getAssetUrl (team, piece) {
@@ -48,20 +72,19 @@ export default {
 
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped>
-h1, h2 {
-  font-weight: normal;
+
+.md-field {
+  width: 70%;
+  margin-left: auto;
+  margin-right: auto;
 }
-ul {
-  list-style-type: none;
-  padding: 0;
-}
-li {
-  display: inline-block;
-  margin: 0 10px;
-}
-a {
-  color: #42b983;
-}
+
+.md-card {
+    margin: 4px;
+    padding: 4px;
+    display: inline-block;
+    vertical-align: top;
+  }
 
 table.board {
   margin-left: auto;

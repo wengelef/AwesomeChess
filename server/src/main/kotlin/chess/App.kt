@@ -112,7 +112,6 @@ fun main(args: Array<String>) {
                 server.memberJoin(session.id, this)
 
                 try {
-                    server.sendTo(session.id, "server", "Commands : start, turn, board, test")
 
                     incoming.mapNotNull { it as? Frame.Text }
                             .consumeEach { frame ->

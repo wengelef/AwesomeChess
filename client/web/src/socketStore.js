@@ -53,10 +53,22 @@ const store = new Vuex.Store({
     },
     send: ({ commit }, message) => {
       Vue.prototype.$socket.sendObj({command: message.text})
+    },
+    sendStart: ({ commit }) => {
+      Vue.prototype.$socket.sendObj({command: 'start'})
+    },
+    sendBoard: ({ commit }) => {
+      Vue.prototype.$socket.sendObj({command: 'board'})
+    },
+    sendTurn: ({ commit }) => {
+      Vue.prototype.$socket.sendObj({command: 'turn'})
+    },
+    sendTest: ({ commit }) => {
+      Vue.prototype.$socket.sendObj({command: 'test'})
     }
   }
 })
 
-Vue.use(VueNativeSock, 'ws://localhost:8080', { store: store, format: 'json' })
+Vue.use(VueNativeSock, 'ws://192.168.0.101:8080', { store: store, format: 'json' })
 
 export default store
