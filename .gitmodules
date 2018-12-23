@@ -1,3 +1,6 @@
 [submodule "client/web"]
 	path = client/web
 	url = https://github.com/wengelef/AwesomeChess-web
+[submodule "server"]
+	path = server
+	url = https://github.com/wengelef/AwesomeChess-server
